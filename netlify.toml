@@ -1,0 +1,26 @@
+# Netlify configuration for vaulto-email Next.js application
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+# Next.js specific configuration for Netlify
+[build.environment]
+  NEXT_PRIVATE_TARGET = "server"
+
+# Function settings
+[functions]
+  directory = "netlify/functions"
+  # Increase timeout for Puppeteer and email generation (max 60s for Pro, 26s for free tier)
+  node_bundler = "esbuild"
+
+# Redirects for Next.js API routes
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
