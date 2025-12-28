@@ -34,64 +34,7 @@ export async function closeBrowser(): Promise<void> {
 }
 
 /**
- * Captures a screenshot of TradingView heatmap
- * @param heatmapUrl - TradingView heatmap widget URL or page URL
- * @param width - Screenshot width (default: 1200)
- * @param height - Screenshot height (default: 800)
- * @returns Base64 encoded image string
- */
-export async function captureTradingViewHeatmap(
-  heatmapUrl: string = 'https://www.tradingview.com/widgetembed/?symbol=SPX&interval=D',
-  width: number = 1200,
-  height: number = 800
-): Promise<string> {
-  const browserInstance = await getBrowser();
-  const page = await browserInstance.newPage();
-
-  try {
-    // Set viewport size
-    await page.setViewport({ width, height });
-
-    // Navigate to TradingView heatmap
-    // Using TradingView's market heatmap widget
-    const widgetUrl = heatmapUrl.includes('widgetembed') 
-      ? heatmapUrl 
-      : `https://www.tradingview.com/widgetembed/?symbol=SPX&interval=D&theme=light&style=1&locale=en&symboledit=1&saveimage=0&toolbarbg=f1f3f6&studies=%5B%5D&hideideas=1&theme=light&style=1&timezone=Etc%2FUTC&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&show_popup_button=1&popup_width=1000&popup_height=650&referral_id=`;
-
-    await page.goto(widgetUrl, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
-    });
-
-    // Wait for the chart to load (adjust selector based on TradingView's structure)
-    await page.waitForTimeout(3000); // Give time for chart to render
-
-    // Try to wait for specific elements that indicate the chart is loaded
-    try {
-      await page.waitForSelector('canvas', { timeout: 10000 });
-    } catch (e) {
-      // Canvas might not be available, continue anyway
-      console.warn('Canvas selector not found, proceeding with screenshot');
-    }
-
-    // Take screenshot
-    const screenshot = await page.screenshot({
-      type: 'png',
-      fullPage: false,
-      encoding: 'base64',
-    });
-
-    return screenshot as string;
-  } catch (error) {
-    console.error('Error capturing TradingView heatmap:', error);
-    throw error;
-  } finally {
-    await page.close();
-  }
-}
-
-/**
- * Alternative: Capture screenshot from TradingView's market heatmap page
+ * Capture screenshot from TradingView's market heatmap page
  * This uses the actual heatmap page instead of widget
  */
 export async function captureTradingViewMarketHeatmap(

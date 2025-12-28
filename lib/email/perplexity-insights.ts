@@ -23,7 +23,7 @@ const REPUTABLE_NEWS_DOMAINS = [
   'forbes.com',
   'businessinsider.com',
   'nasdaq.com',
-  'tradingeconomics.com',
+  // Removed tradingeconomics.com - it's a data/analytics site, not a news source
 ];
 
 /**
@@ -87,39 +87,40 @@ export async function fetchMarketInsights(): Promise<MarketInsight[]> {
       day: 'numeric',
     });
 
-    const prompt = `Generate a concise market overview for ${today}. You MUST provide EXACTLY 5-7 key insights that investors need to know today. Focus on:
-- Major market movements and trends
-- Key economic indicators or news
-- Sector performance highlights
-- Important policy or regulatory changes
-- Market sentiment and outlook
+    const prompt = `Generate an AI-powered market summary for ${today}. Synthesize and analyze current market conditions to create EXACTLY 5-7 comprehensive insights. This should be your analytical summary of the markets today, not just a list of news stories.
+
+Create insights that provide:
+- Market-wide analysis: Overall market performance, key indices movements, and major trends
+- Sector deep-dive: Which sectors are outperforming/underperforming and why
+- Economic context: How economic data, policy decisions, and macro trends are shaping markets
+- Sentiment analysis: Market psychology, investor behavior, and risk appetite
+- Forward-looking perspective: What the current conditions suggest about near-term market direction
 
 CRITICAL REQUIREMENTS:
-1. ONLY use reputable financial news sources from this whitelist: Bloomberg (bloomberg.com), Reuters (reuters.com), Wall Street Journal (wsj.com), Financial Times (ft.com, financialtimes.com), CNBC (cnbc.com), MarketWatch (marketwatch.com), Yahoo Finance (finance.yahoo.com, yahoo.com), The Economist (economist.com), Forbes (forbes.com), Business Insider (businessinsider.com), or Nasdaq (nasdaq.com). DO NOT use Zacks.com or any other sources outside this whitelist.
-2. For each insight, you MUST provide the EXACT, DIRECT URL to the original news article from one of these whitelisted sources. The URL must:
+1. This should be an AI-GENERATED SUMMARY with your own analysis and synthesis. Draw insights from multiple sources and data points to create a cohesive market narrative.
+2. Use current market data, indices, sector performance, and economic indicators from reputable sources (Bloomberg, Reuters, WSJ, Financial Times, CNBC, MarketWatch, Yahoo Finance, etc.) to inform your analysis.
+3. Each insight should include a reference link to a reputable source that supports the insight. The link should:
    - Be a complete, valid HTTPS URL
-   - Point directly to a specific article page (not a homepage, category page, search results, or general market data page)
-   - Have a meaningful article path (e.g., /article-title, /news/article-name, /story/article-id)
-   - Come from one of the whitelisted domains above
-   - Be accessible and not a broken link
-3. You MUST return ONLY valid JSON with no additional text, comments, or markdown formatting.
-4. The JSON structure must be exactly:
+   - Come from reputable financial sources (Bloomberg, Reuters, WSJ, Financial Times, CNBC, MarketWatch, Yahoo Finance, The Economist, Forbes, Business Insider, or Nasdaq)
+   - Be relevant to the insight (can be a news article, data source, or analysis piece)
+4. You MUST return ONLY valid JSON with no additional text, comments, or markdown formatting.
+5. The JSON structure must be exactly:
 {
   "insights": [
     {
-      "title": "Brief, descriptive title of the insight",
-      "description": "2-3 sentence description explaining the market insight",
-      "link": "exact url to news article"
+      "title": "Brief, descriptive title of the market insight",
+      "description": "2-4 sentence AI-generated summary synthesizing market conditions, trends, and analysis",
+      "link": "relevant URL from a reputable source that supports this insight"
     }
   ]
 }
 
 IMPORTANT: 
-- You MUST provide at least 5 insights (preferably 5-7 to account for filtering).
+- You MUST provide at least 5 insights (preferably 5-7).
+- Each insight should reflect YOUR ANALYSIS of market conditions, not just report individual news stories.
+- Synthesize information from multiple sources to create comprehensive market insights.
 - Return ONLY the JSON object. Do not include any text before or after the JSON.
-- Each insight MUST include a valid, direct URL to a reputable news source article.
-- Do NOT use sources outside the whitelist.
-- Do NOT use URLs that point to homepages, category pages, search results, or general data pages - only direct article URLs with specific article paths.`;
+- Links should support the insight but the insight itself should be your synthesized analysis.`;
 
     const response = await fetch('https://api.perplexity.ai/chat/completions', {
       method: 'POST',
@@ -132,7 +133,7 @@ IMPORTANT:
         messages: [
           {
             role: 'system',
-            content: 'You are a financial market analyst providing concise, actionable market insights for daily email newsletters. Always return responses in valid JSON format. CRITICAL: You may ONLY search for and use news articles from extremely reputable financial news sources such as The Wall Street Journal (WSJ), Bloomberg, Reuters, Financial Times, CNBC, MarketWatch, Yahoo Finance, The Economist, Forbes, Business Insider, and Nasdaq. DO NOT use Zacks.com or any other sources outside this list. All article URLs must be direct links to actual articles, not homepages or category pages.',
+            content: 'You are a senior financial market analyst creating AI-generated market summaries. Synthesize market data, news, economic indicators, and sector performance to provide comprehensive market analysis. Your insights should reflect analytical synthesis and market understanding, not just reporting individual news stories. Always return responses in valid JSON format. Use reputable financial sources (WSJ, Bloomberg, Reuters, Financial Times, CNBC, MarketWatch, Yahoo Finance, The Economist, Forbes, Business Insider, Nasdaq) to inform your analysis, but create your own summarized insights from the broader market picture.',
           },
           {
             role: 'user',
@@ -258,6 +259,54 @@ IMPORTANT:
       }).join('\n  '));
     }
     
+    // Filter citations to only include reputable sources and valid article URLs
+    const validCitations = citations.filter(url => {
+      // Must be from a reputable source
+      if (!isReputableSource(url)) {
+        return false;
+      }
+      
+      // Must be a valid article URL (not data pages, homepages, etc.)
+      try {
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname.toLowerCase();
+        
+        // Reject obvious non-article pages
+        if (pathname === '/' || pathname === '' || 
+            pathname === '/stock-market' || 
+            pathname === '/united-states/stock-market' ||
+            pathname.includes('/data/') || 
+            pathname.includes('/dashboard/')) {
+          return false;
+        }
+        
+        // Must have at least one path segment (not just homepage)
+        const pathSegments = pathname.split('/').filter(seg => seg.length > 0);
+        if (pathSegments.length < 1) {
+          return false;
+        }
+        
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    
+    console.log(`Valid citations (reputable sources with article URLs): ${validCitations.length}`);
+    if (validCitations.length > 0) {
+      console.log('Valid citation URLs:', validCitations.slice(0, 10).map(url => {
+        try {
+          const hostname = new URL(url).hostname;
+          return `${hostname} - ${url.substring(0, 80)}...`;
+        } catch {
+          return url.substring(0, 80) + '...';
+        }
+      }).join('\n  '));
+    }
+    
+    // Use only valid citations from now on
+    citations = validCitations;
+    
     const content = data.choices?.[0]?.message?.content;
 
     if (!content) {
@@ -332,83 +381,37 @@ IMPORTANT:
       let cleanedDescription = insight.description.trim();
       const citationMatches = cleanedDescription.match(/\[(\d+)\]/g);
       let citationUrl = '';
+      let isFromCitation = false;
       
-      // Priority 1: Use link from JSON response if it's from a reputable source
-      // Perplexity's JSON links are often more accurate than search_results citations
-      if (insight.link) {
-        const jsonLink = insight.link.trim();
-        if (isReputableSource(jsonLink)) {
-          // Check if it's a valid article URL (not homepage)
-          try {
-            const urlObj = new URL(jsonLink);
-            const pathname = urlObj.pathname.toLowerCase();
-            if (pathname !== '/' && pathname !== '') {
-              citationUrl = jsonLink;
-              console.log(`Using JSON link (reputable source): ${citationUrl}`);
-            }
-          } catch (e) {
-            // Invalid URL, skip
-          }
-        }
-      }
-      
-      // Priority 2: Try citations from Perplexity's search results if JSON link wasn't suitable
-      // Only use citations that are from reputable sources and look like articles
-      if (!citationUrl && citations.length > 0) {
-        // First try citation number from description
+      // ALWAYS prioritize citations from Perplexity's search results over JSON response URLs
+      if (citations.length > 0) {
+        // Priority 1: Try to match citation number from description (e.g., [1], [2])
         if (citationMatches && citationMatches.length > 0) {
           const firstCitationMatch = citationMatches[0].match(/\[(\d+)\]/);
           if (firstCitationMatch) {
             const citationIndex = parseInt(firstCitationMatch[1], 10) - 1;
             if (citationIndex >= 0 && citationIndex < citations.length) {
-              const potentialUrl = citations[citationIndex];
-              if (isReputableSource(potentialUrl)) {
-                try {
-                  const urlObj = new URL(potentialUrl);
-                  const pathname = urlObj.pathname.toLowerCase();
-                  // Only use if it's not a homepage or obvious data page
-                  if (pathname !== '/' && pathname !== '' && 
-                      pathname !== '/stock-market' && 
-                      pathname !== '/united-states/stock-market') {
-                    citationUrl = potentialUrl;
-                    console.log(`Using citation [${firstCitationMatch[1]}] URL: ${citationUrl}`);
-                  }
-                } catch (e) {
-                  // Invalid URL, skip
-                }
-              }
+              citationUrl = citations[citationIndex];
+              isFromCitation = true;
+              console.log(`Using citation [${firstCitationMatch[1]}] URL: ${citationUrl}`);
             }
           }
         }
         
-        // If no citation number match, try to find a good citation
+        // Priority 2: If no citation number match, assign citations cyclically based on insight index
         if (!citationUrl) {
-          for (const potentialCitation of citations) {
-            if (isReputableSource(potentialCitation)) {
-              try {
-                const urlObj = new URL(potentialCitation);
-                const pathname = urlObj.pathname.toLowerCase();
-                // Only use if it's not a homepage or obvious data page
-                if (pathname !== '/' && pathname !== '' && 
-                    pathname !== '/stock-market' && 
-                    pathname !== '/united-states/stock-market') {
-                  citationUrl = potentialCitation;
-                  console.log(`Using reputable citation URL: ${citationUrl}`);
-                  break;
-                }
-              } catch (e) {
-                // Invalid URL, skip
-                continue;
-              }
-            }
-          }
+          const insightIndex = validInsights.length;
+          const citationIndex = insightIndex % citations.length;
+          citationUrl = citations[citationIndex];
+          isFromCitation = true;
+          console.log(`Assigning citation ${citationIndex + 1}/${citations.length} to insight ${insightIndex + 1}: ${citationUrl}`);
         }
       }
       
-      // Priority 3: Fall back to JSON link even if not from reputable source (shouldn't happen with our prompt)
+      // Priority 3: Only fall back to JSON response link if NO citations are available at all
       if (!citationUrl && insight.link) {
         citationUrl = insight.link.trim();
-        console.log(`Using JSON link as fallback: ${citationUrl}`);
+        console.log(`Using link from JSON response (no citations available in API response): ${citationUrl}`);
       }
       
       // Skip if we still don't have a valid URL
@@ -417,18 +420,6 @@ IMPORTANT:
         continue;
       }
 
-      // Check if this URL came from citations (normalize URLs for comparison)
-      const normalizeUrl = (url: string) => {
-        try {
-          const u = new URL(url);
-          return `${u.protocol}//${u.hostname}${u.pathname}`.toLowerCase();
-        } catch {
-          return url.toLowerCase();
-        }
-      };
-      const normalizedCitationUrl = normalizeUrl(citationUrl);
-      const isFromCitation = citations.some(c => normalizeUrl(c) === normalizedCitationUrl);
-      
       // Validate that the URL is from a reputable source
       if (!isReputableSource(citationUrl)) {
         console.warn(`Insight URL is not from a reputable source: ${citationUrl}`, insight.title);
@@ -448,11 +439,11 @@ IMPORTANT:
         // If it's from a citation, trust Perplexity and only reject obvious non-articles
         if (isFromCitation) {
           // For citations, only reject homepage or obvious data pages
-          if (pathname === '/' || pathname === '' || pathname === '/stock-market' || pathname === '/united-states/stock-market') {
+          if (pathname === '/' || pathname === '' || pathname === '/stock-market' || pathname === '/united-states/stock-market' || pathname.includes('/data/') || pathname.includes('/dashboard/')) {
             console.warn(`Citation URL appears to be a non-article page: ${citationUrl}`, insight.title);
             continue;
           }
-          // Citations from Perplexity are trusted - they're real article URLs
+          // Citations from Perplexity are generally trusted if they pass basic checks
           console.log(`Using verified citation URL: ${citationUrl}`);
         } else {
           // For non-citation URLs (from JSON), apply stricter validation
