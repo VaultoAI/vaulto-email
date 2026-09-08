@@ -96,7 +96,12 @@ Update the setup documentation to reflect Netlify-specific instructions, includi
 
 ## Important Considerations
 
-1. **URL Construction**: The Netlify function needs to know the site URL to call the Next.js API route. Use `process.env.URL` (available in Netlify functions) or construct it from `process.env.DEPLOY_PRIME_URL` or `process.env.CONTEXT`.
+1. **URL Construction**: The Netlify function needs to know the site URL to call the Next.js API route. In Netlify functions, use:
+   - `process.env.URL` - The production URL (after deployment)
+   - `process.env.DEPLOY_PRIME_URL` - The deploy preview URL
+   - Or construct from `process.env.SITE_URL` or similar
+   
+   The function should construct the full URL like: `${process.env.URL}/api/cron/send-daily-email`
 
 2. **Authentication**: The endpoint supports optional authentication via `CRON_SECRET`. The Netlify function should include this header if the environment variable is set, but should still work if it's not set (for local testing).
 
@@ -113,7 +118,9 @@ Update the setup documentation to reflect Netlify-specific instructions, includi
    
    This may take 30-60 seconds. Ensure the Netlify function timeout is sufficient (default is 10 seconds, may need to increase to 26 seconds for free tier, or 60+ seconds for paid).
 
-5. **Dependencies**: Make sure Puppeteer and other dependencies work correctly in Netlify's serverless environment. Netlify Functions run in a Node.js environment, but may need special configuration for Puppeteer.
+5. **Dependencies**: Make sure Puppeteer and other dependencies work correctly in Netlify's serverless environment. Netlify Functions run in a Node.js environment, but may need special configuration for Puppeteer. Note: The Puppeteer usage is in the Next.js API route, not the Netlify function itself, so this should be handled by Netlify's Next.js runtime.
+
+6. **Next.js on Netlify**: Netlify supports Next.js apps. The Next.js API routes should work normally. The scheduled function just needs to make an HTTP request to trigger the API route - it doesn't need to import or execute the Next.js code directly.
 
 ## Expected Function Structure
 
@@ -124,15 +131,64 @@ The Netlify scheduled function should look something like:
 const { schedule } = require('@netlify/functions');
 
 const handler = schedule('0 10 * * *', async (event, context) => {
-  // Get site URL
-  // Construct API endpoint URL
-  // Make HTTP request with auth header if needed
-  // Log results
-  // Return appropriate response
+  try {
+    // Get site URL - use URL for production, or DEPLOY_PRIME_URL for previews
+    const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL;
+    if (!siteUrl) {
+      throw new Error('Site URL not found in environment variables');
+    }
+
+    // Construct API endpoint URL
+    const apiUrl = `${siteUrl}/api/cron/send-daily-email`;
+    
+    // Prepare headers
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    // Add authentication header if CRON_SECRET is set
+    if (process.env.CRON_SECRET) {
+      headers['Authorization'] = `Bearer ${process.env.CRON_SECRET}`;
+    }
+
+    // Make HTTP GET request to the Next.js API route
+    // Note: fetch is available in Node.js 18+ (Netlify's default)
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: headers,
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      console.error('API endpoint returned error:', data);
+      return {
+        statusCode: response.status,
+        body: JSON.stringify({ error: 'Failed to send email', details: data }),
+      };
+    }
+
+    console.log('Email sent successfully:', data);
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ success: true, message: 'Email sent successfully', data }),
+    };
+  } catch (error) {
+    console.error('Error in scheduled function:', error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ 
+        error: 'Internal server error', 
+        message: error.message 
+      }),
+    };
+  }
 });
 
 module.exports = { handler };
 ```
+
+**Note**: This example uses `fetch` which is available in Node.js 18+. Netlify Functions use Node.js 18 by default. If you need to support older versions, you can use the `node-fetch` package or native `https` module instead.
 
 ## Testing
 
@@ -155,6 +211,39 @@ After implementation:
 - **Time**: 10 AM UTC daily
 - **Cron Expression**: `0 10 * * *`
 - **Recipients**: charliebc@vaulto.ai, david@vaulto.ai
+
+## Implementation Checklist
+
+Please ensure the following:
+
+- [ ] Create `netlify/functions/send-daily-email/` directory
+- [ ] Create the scheduled function file (JavaScript)
+- [ ] Install `@netlify/functions` package if needed
+- [ ] Update or create `netlify.toml` with proper configuration
+- [ ] Ensure function timeout is sufficient (26+ seconds for Netlify)
+- [ ] Test the function locally if possible
+- [ ] Verify the function calls the correct Next.js API route
+- [ ] Handle authentication header correctly (with or without CRON_SECRET)
+- [ ] Add proper error handling and logging
+- [ ] Document how to verify the cron job is running in Netlify dashboard
+
+## Deployment Steps
+
+After implementation, the deployment process should be:
+1. Push code to repository
+2. Netlify will automatically detect and deploy
+3. The scheduled function will be registered automatically
+4. Function will run at the scheduled time (10 AM UTC daily)
+5. View logs in Netlify dashboard under Functions > Scheduled Functions
+
+## Verification
+
+After deployment, verify:
+1. Check Netlify dashboard for the scheduled function
+2. Manually trigger the function once to test (if possible)
+3. Check function logs for any errors
+4. Verify email is received by recipients
+5. Monitor the next scheduled execution
 
 Please implement this setup and ensure everything is configured correctly for Netlify deployment.
 

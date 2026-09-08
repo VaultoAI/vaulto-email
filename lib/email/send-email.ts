@@ -2,7 +2,15 @@
 
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy init: constructing Resend without a key throws, which breaks
+// `next build` page-data collection when env vars aren't set locally
+let resendClient: Resend | null = null;
+function getResend(): Resend {
+  if (!resendClient) {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resendClient;
+}
 
 export interface EmailRecipient {
   email: string;
@@ -28,7 +36,7 @@ export async function sendMarketOverviewEmail(
   const fromName = process.env.EMAIL_FROM_NAME || 'Vaulto';
 
   try {
-    const result = await resend.emails.send({
+    const result = await getResend().emails.send({
       from: `${fromName} <${fromEmail}>`,
       to: recipients.map(r => r.email),
       subject: `Daily Market Overview - ${new Date().toLocaleDateString('en-US', { 

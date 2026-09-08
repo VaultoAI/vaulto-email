@@ -13,16 +13,47 @@ const DEFAULT_RECIPIENTS = [
   { email: 'david@vaulto.ai' },
 ];
 
-export async function POST(request?: Request) {
+interface Recipient {
+  email: string;
+  name?: string;
+}
+
+function isAuthorized(request?: Request): boolean {
+  const cronSecret = process.env.CRON_SECRET;
+  // If no secret is configured, the endpoint is open (dev convenience).
+  if (!cronSecret) return true;
+  const authHeader = request?.headers.get('authorization');
+  return authHeader === `Bearer ${cronSecret}`;
+}
+
+async function sendEmail(request?: Request) {
   try {
-    let recipients = DEFAULT_RECIPIENTS;
+    // This endpoint sends mail from the verified Vaulto domain to arbitrary
+    // recipients — gate it so it can't be used as an open relay.
+    if (!isAuthorized(request)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    let recipients: Recipient[] = DEFAULT_RECIPIENTS;
 
     // Allow custom recipients via request body (optional)
     if (request) {
       try {
         const body = await request.json();
-        if (body.recipients && Array.isArray(body.recipients)) {
-          recipients = body.recipients;
+        if (Array.isArray(body.recipients)) {
+          const valid = body.recipients.filter(
+            (r: unknown): r is Recipient =>
+              !!r &&
+              typeof (r as Recipient).email === 'string' &&
+              /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((r as Recipient).email)
+          );
+          if (valid.length === 0) {
+            return NextResponse.json(
+              { error: 'No valid recipients provided' },
+              { status: 400 }
+            );
+          }
+          recipients = valid;
         }
       } catch {
         // If body parsing fails, use default recipients
@@ -76,8 +107,12 @@ export async function POST(request?: Request) {
   }
 }
 
+export async function POST(request: Request) {
+  return sendEmail(request);
+}
+
 // Also allow GET for easy testing
 export async function GET() {
-  return POST();
+  return sendEmail();
 }
 
